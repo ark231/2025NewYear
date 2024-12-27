@@ -11,34 +11,11 @@ from PIL import Image
 
 from logging import getLogger, config
 
+from FixedHeightFontFormat import FixedHeightFont
+
 logger = getLogger(__name__)
 
 SRCDIR = Path(__file__).parent
-
-
-@dataclass
-class FontMetaData:
-    totalsize: int
-    cmap_count: int
-    strike_metadata_count: int
-
-
-@dataclass
-class StrikeMetaData:
-    firstGlyphIndex: int
-    lastGlyphIndex: int
-    height: int
-    width: int
-
-    def dumps(self):
-        return struct.pack("<IIBB", self.firstGlyphIndex, self.lastGlyphIndex, self.height, self.width)
-
-    def dump(self, out):
-        try:
-            out.write(self.dumps())
-        except AttributeError:
-            with open(out, "wb") as outfile:
-                outfile.write(self.dumps())
 
 
 def load_ttf(path, out, out_xml, out_pbm):
@@ -130,8 +107,7 @@ def load_ttf(path, out, out_xml, out_pbm):
 
     logger.debug(len(catdat))
     catbuf = np.frombuffer(catdat[: 2 * (16 * 4)], np.uint16)
-    catbuf = catbuf.reshape((1, -1))
-    logger.debug(catbuf)
+    return FixedHeightFont()
 
 
 def init_argument_parser():
@@ -157,7 +133,8 @@ def main(args):
     # for pth in (SRCDIR / "data" / "KH-Dot").glob("*"):
     # for pth in (SRCDIR / "data" / "KH-Dot").glob("*Akihabara*"):
     #     load_ttf(pth, SRCDIR / "out" / (pth.stem))
-    load_ttf(args.src, args.dst, args.xml, args.pbm)
+    font = load_ttf(args.src, args.dst, args.xml, args.pbm)
+    font.dump(args.dst / "font.fhft")
 
 
 if __name__ == "__main__":
