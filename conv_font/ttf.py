@@ -8,17 +8,29 @@ import struct
 import numpy as np
 import tomllib
 from PIL import Image
+import math
+import itertools
 
 from logging import getLogger, config
 
-from FixedHeightFontFormat import FixedHeightFont
+import FixedHeightFontFormat as FHFT
 
 logger = getLogger(__name__)
 
 SRCDIR = Path(__file__).parent
 
 
+@dataclass
+class Glyph:
+    width: int
+    name: str
+    data: bytes
+    gid: int = 0
+
+
 def load_ttf(path, out, out_xml, out_pbm):
+    result = FHFT.FixedHeightFont()
+
     logger.info(path)
     logger.info(out)
 
@@ -50,7 +62,7 @@ def load_ttf(path, out, out_xml, out_pbm):
 
     strikedats = list(dat.strikeData[0].items())
 
-    catdat = b""
+    glyphs: list[Glyph] = []
 
     for strike in loc.strikes:
         bmsizetab = strike.bitmapSizeTable
@@ -65,7 +77,7 @@ def load_ttf(path, out, out_xml, out_pbm):
             except AttributeError:
                 continue
             w, h = met.width, met.height
-            logger.info(f"{h}x{w}")
+            logger.info("%dx%d", h, w)
             for i in range(first, last + 1):
                 name, strikedat = strikedats[i]
                 if i == first:
@@ -73,10 +85,10 @@ def load_ttf(path, out, out_xml, out_pbm):
                 elif i == last:
                     logger.info("to   %s", name)
                 try:
-                    imdat = strikedat.data
-                except AttributeError as e:
-                    imdat = strikedat.imageData
-                buf = np.frombuffer(imdat, np.dtype(">H"))
+                    rawimdat = strikedat.data
+                except AttributeError:
+                    rawimdat = strikedat.imageData
+                buf = np.frombuffer(rawimdat, np.dtype(">H"))
 
                 if out_pbm:
                     outdir = out / "pbm" / "raw"
@@ -91,10 +103,10 @@ def load_ttf(path, out, out_xml, out_pbm):
                 bitcount = 0
                 for y in range(h - 1, -1, -1):
                     for x in range(w):
-                        pix = 0 if imdat[bitcount // 8] & (1 << (7 - (bitcount % 8))) == 0 else 1
+                        pix = 0 if rawimdat[bitcount // 8] & (1 << (7 - (bitcount % 8))) == 0 else 1
                         imbuf[x] |= pix << y
                         bitcount += 1
-                catdat += imbuf.tobytes()
+                glyphs.append(Glyph(w, name, imbuf.tobytes()))
 
                 if out_pbm:
                     outdir = out / "pbm" / "rot"
@@ -104,10 +116,45 @@ def load_ttf(path, out, out_xml, out_pbm):
                         print(h, w, file=outfile)
                         for col in imbuf:
                             print(f"{col:016b}", file=outfile)
+    glyphs.sort(key=lambda item: item.width)
 
-    logger.debug(len(catdat))
-    catbuf = np.frombuffer(catdat[: 2 * (16 * 4)], np.uint16)
-    return FixedHeightFont()
+    cmap = font["cmap"]
+    rev = cmap.buildReversed()
+
+    gsub = font["GSUB"]
+
+    if out_xml:
+        writer = XMLWriter(out / "GSUB.xml", "  ")
+        gsub.toXML(writer, font)
+
+    cmapitems = []
+    for i, glyph in enumerate(glyphs):
+        glyph.gid = i
+        try:
+            for c in rev[glyph.name]:
+                cmapitems.append(FHFT.CMAPItem(c, i))
+        except KeyError as e:
+            # GSUBで置換される先のグリフはCMAPにのっていないのでこうなる。
+            # TODO: GSUBに対応
+            logger.debug("key error: %s", e)
+    cmapitems.sort(key=lambda item: item.codepoint)
+
+    def bytelen(value):
+        return math.ceil((len(hex(value)) - 2) / 2)
+
+    result.cmap.table_1byte.items = [item for item in cmapitems if bytelen(item.codepoint) == 1]
+    result.cmap.table_2byte.items = [item for item in cmapitems if bytelen(item.codepoint) == 2]
+    result.cmap.table_3byte.items = [item for item in cmapitems if bytelen(item.codepoint) == 3]
+    result.cmap.table_4byte.items = [item for item in cmapitems if bytelen(item.codepoint) == 4]
+
+    for w, gs in itertools.groupby(glyphs, lambda item: item.width):
+        logger.debug(w)
+        logger.debug(gs)
+        gs = list(gs)
+        result.glyph.shapes.children.append(
+            FHFT.GlyphShape(gs[0].gid, gs[-1].gid, w, b"".join(item.data for item in gs))
+        )
+    return result
 
 
 def init_argument_parser():

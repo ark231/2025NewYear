@@ -13,8 +13,6 @@ class FourCC(bytes):
 
 class Chunk:
     chunk_id: FourCC = b"NULL"
-    size: int
-    data: bytes
 
     def __init__(self, data=b""):
         self.size = len(data)
@@ -35,13 +33,12 @@ class Chunk:
 class List(Chunk):
     chunk_id = b"LIST"
     list_type: FourCC = b"NULL"
-    children: list[Chunk]
 
     def __init__(self, children=None):
         super().__init__()
         if children is None:
             children = []
-        self.children = children
+        self.children: list[Chunk] = children
 
     def dumps(self):
         self.data = self.list_type
@@ -51,13 +48,11 @@ class List(Chunk):
 
 
 class FontMetadata(Chunk):
-    version: int
-
     chunk_id = b"FTMT"
+    version = 1
 
     def __init__(self):
         super().__init__()
-        self.version = 0
 
     def dumps(self):
         self.data = struct.pack("<h", self.version)
@@ -70,22 +65,21 @@ class CMAPItem:
     glyphid: int
 
     def to_bytes(self):
-        size = math.ceil((len(hex(self.codepoint)) - 1) / 2)
+        size = math.ceil((len(hex(self.codepoint)) - 2) / 2)
         assert size <= 4
         result = b""
-        result += self.codepoint.to_bytes(size, "little", False)
-        result += self.glyphid.to_bytes(2, "little", False)
+        result += self.codepoint.to_bytes(size, "little", signed=False)
+        result += self.glyphid.to_bytes(2, "little", signed=False)
         return result
 
 
 class CMAPTable(Chunk):
-    items: list[CMAPItem]
 
     def __init__(self, bytewidth=1, items=None):
         super().__init__()
         self.chunk_id = f"CM{bytewidth}B".encode("utf8")
         if items is None:
-            self.items = []
+            self.items: list[CMAPItem] = []
 
     def dumps(self):
         for item in self.items:
@@ -114,8 +108,19 @@ class CMAP(List):
 class GlyphShape(Chunk):
     chunk_id = b"GLSP"
 
-    def __init__(self):
+    def __init__(self, firstgid=-1, lastgid=-1, width=-1, bitmaps=b""):
         super().__init__()
+        self.firstgid = firstgid
+        self.lastgid = lastgid
+        self.width = width
+        self.bitmaps = bitmaps
+
+    def dumps(self):
+        self.data += self.firstgid.to_bytes(2, "little", signed=False)
+        self.data += self.lastgid.to_bytes(2, "little", signed=False)
+        self.data += self.width.to_bytes(2, "little", signed=False)
+        self.data += self.bitmaps
+        return super().dumps()
 
 
 class ShapeList(List):
