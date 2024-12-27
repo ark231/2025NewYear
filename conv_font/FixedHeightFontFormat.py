@@ -12,12 +12,11 @@ class FourCC(bytes):
 
 
 class Chunk:
-    chunk_id: FourCC
+    chunk_id: FourCC = b"NULL"
     size: int
     data: bytes
 
-    def __init__(self, chunk_id=b"NULL", data=b""):
-        self.chunk_id = chunk_id
+    def __init__(self, data=b""):
         self.size = len(data)
         self.data = data
 
@@ -35,12 +34,11 @@ class Chunk:
 
 class List(Chunk):
     chunk_id = b"LIST"
-    list_type: FourCC
+    list_type: FourCC = b"NULL"
     children: list[Chunk]
 
-    def __init__(self, list_type=b"NULL", children=None):
-        super().__init__(chunk_id=List.chunk_id)
-        self.list_type = list_type
+    def __init__(self, children=None):
+        super().__init__()
         if children is None:
             children = []
         self.children = children
@@ -58,7 +56,7 @@ class FontMetadata(Chunk):
     chunk_id = b"FTMT"
 
     def __init__(self):
-        super().__init__(chunk_id=FontMetadata.chunk_id)
+        super().__init__()
         self.version = 0
 
     def dumps(self):
@@ -84,7 +82,8 @@ class CMAPTable(Chunk):
     items: list[CMAPItem]
 
     def __init__(self, bytewidth=1, items=None):
-        super().__init__(chunk_id=f"CM{bytewidth}B".encode("utf8"))
+        super().__init__()
+        self.chunk_id = f"CM{bytewidth}B".encode("utf8")
         if items is None:
             self.items = []
 
@@ -98,7 +97,7 @@ class CMAP(List):
     list_type = b"CMAP"
 
     def __init__(self):
-        super().__init__(list_type=CMAP.list_type)
+        super().__init__()
         self.table_1byte = CMAPTable(1)
         self.table_2byte = CMAPTable(2)
         self.table_3byte = CMAPTable(3)
@@ -116,21 +115,21 @@ class GlyphShape(Chunk):
     chunk_id = b"GLSP"
 
     def __init__(self):
-        super().__init__(chunk_id=GlyphShape.chunk_id)
+        super().__init__()
 
 
 class ShapeList(List):
     list_type = b"SPLI"
 
     def __init__(self):
-        super().__init__(list_type=CMAP.list_type)
+        super().__init__()
 
 
 class Glyph(List):
     list_type = b"GLYF"
 
     def __init__(self):
-        super().__init__(list_type=Glyph.list_type)
+        super().__init__()
         self.shapes = ShapeList()
 
     def dumps(self):
@@ -143,12 +142,13 @@ class RIFFHeader(List):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.chunk_id = RIFFHeader.chunk_id
 
 
 class FixedHeightFont(RIFFHeader):
+    list_type = b"FHFT"
+
     def __init__(self):
-        super().__init__(list_type=b"FHFT")
+        super().__init__()
         self.metadata = FontMetadata()
         self.cmap = CMAP()
         self.glyph = Glyph()
