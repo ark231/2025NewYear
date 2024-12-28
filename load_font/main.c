@@ -37,14 +37,24 @@ void print_help() {
     printf("options: \n");
     printf("--log-level <arg> set log level to <arg>\n");
     printf("                  log levels: DEBUG, INFO, WARNING, ERROR, FATAL\n");
+    printf("--riff-view       show riff information only and don't extract font\n");
     printf("-h/--help         show this help\n");
 }
+
+typedef enum {
+    LOAD_FONT_MODE,
+    RIFF_VIEW_MODE,
+} AppMode;
+
+AppMode mode = LOAD_FONT_MODE;
 
 int main(int argc, const char** argv) {
     int exit_status = 0;
 
     const char** positionals = malloc(sizeof(char*) * (argc - 1));  // It's 2024. I am very rich!
-    size_t positonal_count = 0;
+    size_t positional_count = 0;
+    size_t positional_required = 2;
+
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] == '-' && argv[i][1] == '-') {  // long
             if (strcmp(argv[i] + 2, "log-level") == 0) {
@@ -56,6 +66,9 @@ int main(int argc, const char** argv) {
             } else if (strcmp(argv[i] + 2, "help") == 0) {
                 print_help();
                 return 0;
+            } else if (strcmp(argv[i] + 2, "riff-view") == 0) {
+                mode = RIFF_VIEW_MODE;
+                positional_required = 1;  // source
             }
         } else if (argv[i][0] == '-') {
             if (argv[i][1] == 'h') {
@@ -63,12 +76,12 @@ int main(int argc, const char** argv) {
                 return 0;
             }
         } else {
-            positionals[positonal_count] = argv[i];
-            positonal_count++;
+            positionals[positional_count] = argv[i];
+            positional_count++;
         }
     }
 
-    if (positonal_count < 2) {
+    if (positional_count < positional_required) {
         SIMPLE_LOG(FATAL, "insufficient positional argument");
         return 1;
     }
@@ -82,7 +95,9 @@ int main(int argc, const char** argv) {
         goto quit;
     }
 
-    printf("RIFF: size: %u form: %s\n", header.size, cfourcc(header.form_id));
+    if (mode == RIFF_VIEW_MODE) {
+        printf("RIFF: size: %u form: %s\n", header.size, cfourcc(header.form_id));
+    }
 
     uint32_t parsed_len = 4;  // format name
     PlainChunkList* chunklist = malloc(sizeof(PlainChunkList));
@@ -95,22 +110,29 @@ int main(int argc, const char** argv) {
             goto quit;
         }
         parsed_len += PLAININFO(info).size + 8;
-        printf("- %s size %u", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size);
+        if (mode == RIFF_VIEW_MODE) {
+            printf("- %s size %u offset %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
+                   PLAININFO(info).pos);
+        }
         if (info.type == LIST) {
-            printf(" type: %s\n", cfourcc(info.info.list.list_type));
+            if (mode == RIFF_VIEW_MODE) {
+                printf(" type: %s\n", cfourcc(info.info.list.list_type));
+            }
             visit_riff_list(file, PLAININFO(info).size, 1, chunklist);
         } else {
             RIFFPlainChunkInfo plain = PLAININFO(info);
             list_append(chunklist, &plain);
             riff_skip_chunk(file, &plain);
-            printf("\n");
+            if (mode == RIFF_VIEW_MODE) {
+                printf("\n");
+            }
         }
     }
-    chunklist = list_seek_head(chunklist);
-    while (chunklist->next != NULL) {
-        printf("%s\n", cfourcc(chunklist->info.chunk_id));
-        chunklist = chunklist->next;
-    }
+    /* chunklist = list_seek_head(chunklist); */
+    /* while (chunklist->next != NULL) { */
+    /*     printf("%s\n", cfourcc(chunklist->info.chunk_id)); */
+    /*     chunklist = chunklist->next; */
+    /* } */
 quit:
     fclose(file);
     free(positionals);
@@ -128,19 +150,26 @@ void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chu
             return;
         }
         parsed_len += PLAININFO(info).size + 8;
-        for (int i = 0; i < indent; i++) {
-            printf(INDENT);
+        if (mode == RIFF_VIEW_MODE) {
+            for (int i = 0; i < indent; i++) {
+                printf(INDENT);
+            }
+            printf("- %s size %u offset %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
+                   PLAININFO(info).pos);
         }
-        printf("-%s size: %u", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size);
 
         if (info.type == LIST) {
-            printf(" type: %s\n", cfourcc(info.info.list.list_type));
+            if (mode == RIFF_VIEW_MODE) {
+                printf(" type: %s\n", cfourcc(info.info.list.list_type));
+            }
             visit_riff_list(file, PLAININFO(info).size, indent + 1, chunklist);
         } else {
             RIFFPlainChunkInfo plain = PLAININFO(info);
             list_append(chunklist, &plain);
             riff_skip_chunk(file, &plain);
-            printf("\n");
+            if (mode == RIFF_VIEW_MODE) {
+                printf("\n");
+            }
         }
     }
 }
