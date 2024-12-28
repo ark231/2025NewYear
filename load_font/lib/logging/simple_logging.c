@@ -2,8 +2,9 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
-static LogLevel current_level = ERROR;
+static LogLevel current_level = DEFAULT_LOG_LEVEL;
 
 #define STR_LOG_CASE(lvl) \
     case lvl:             \
@@ -45,4 +46,18 @@ void simple_log_impl(LogLevel level, const char *file, int line, const char *fun
     vprintf(format, ap);
     printf("\n");
     va_end(ap);
+}
+#define PARSE_LOG_CASE(str, level)          \
+    do {                                    \
+        if (strcmp((str), (#level)) == 0) { \
+            return level;                   \
+        }                                   \
+    } while (false)
+LogLevel parse_log_level(const char *str) {
+    PARSE_LOG_CASE(str, DEBUG);
+    PARSE_LOG_CASE(str, INFO);
+    PARSE_LOG_CASE(str, WARNING);
+    PARSE_LOG_CASE(str, ERROR);
+    PARSE_LOG_CASE(str, FATAL);
+    return DEFAULT_LOG_LEVEL;
 }
