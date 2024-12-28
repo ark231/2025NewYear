@@ -3,31 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "plain_chunk_list.h"
 #define INDENT "  "
-
-struct PlainChunkList;
-
-struct PlainChunkList {
-    RIFFPlainChunkInfo info;
-    struct PlainChunkList* prev;
-    struct PlainChunkList* next;
-};
-
-typedef struct PlainChunkList PlainChunkList;
-
-void init_list(PlainChunkList* list);
-
-[[nodiscard("this function takes VALUE of pointer, so this can't change the address the pointer points to.")]]
-PlainChunkList* list_seek_head(PlainChunkList* list);
-
-[[nodiscard("this function takes VALUE of pointer, so this can't change the address the pointer points to.")]]
-PlainChunkList* list_seek_tail(PlainChunkList* list);
-
-// there are no way but manual one to assign info to the very first item of the list
-// but it shouldn't cause any harm, right? I'm a bit lazy and deadline is close.
-void list_append(PlainChunkList* list, const RIFFPlainChunkInfo* info);
-
-void free_list(PlainChunkList* list);
 
 void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chunklist);
 
@@ -128,11 +106,10 @@ int main(int argc, const char** argv) {
             }
         }
     }
-    /* chunklist = list_seek_head(chunklist); */
-    /* while (chunklist->next != NULL) { */
-    /*     printf("%s\n", cfourcc(chunklist->info.chunk_id)); */
-    /*     chunklist = chunklist->next; */
-    /* } */
+    if (mode == RIFF_VIEW_MODE) {
+        goto quit;
+    }
+
 quit:
     fclose(file);
     free(positionals);
@@ -171,46 +148,5 @@ void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chu
                 printf("\n");
             }
         }
-    }
-}
-
-void init_list(PlainChunkList* list) {
-    list->info.chunk_id = FOURCC("NULL");
-    list->info.size = 0;
-    list->info.pos = 0;
-    list->next = NULL;
-    list->prev = NULL;
-}
-PlainChunkList* list_seek_head(PlainChunkList* list) {  // this is VALUE OF POINTER, so changing the address this
-                                                        // variable has does NOT affect caller's value
-    while (list->prev != NULL) {
-        list = list->prev;
-    }
-    return list;
-}
-PlainChunkList* list_seek_tail(PlainChunkList* list) {
-    while (list->next != NULL) {
-        SIMPLE_LOG(DEBUG, "%p -> %p", list, list->next);
-        list = list->next;
-    }
-    return list;
-}
-void list_append(PlainChunkList* list, const RIFFPlainChunkInfo* info) {
-    if (list->next != NULL) {
-        list = list_seek_tail(list);
-    }
-    SIMPLE_LOG(DEBUG, "appending %s", cfourcc(info->chunk_id));
-    list->next = malloc(sizeof(PlainChunkList));
-    list->next->prev = list;
-    list = list->next;
-    list->info = *info;
-}
-void free_list(PlainChunkList* list) {
-    list = list_seek_tail(list);
-    while (list->prev != NULL) {
-        if (list->next != NULL) {
-            free(list->next);
-        }
-        list = list->prev;
     }
 }

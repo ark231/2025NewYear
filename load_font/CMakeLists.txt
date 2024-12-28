@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 add_subdirectory(lib)
 
-add_executable(load_font main.c)
+add_executable(load_font main.c plain_chunk_list.c)
 
 target_link_libraries(load_font PUBLIC riff logging)
 
