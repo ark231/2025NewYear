@@ -49,13 +49,20 @@ class List(Chunk):
 
 class FontMetadata(Chunk):
     chunk_id = b"FTMT"
-    version = 1
+    version = 2
 
-    def __init__(self):
+    def __init__(self, name: str = ""):
         super().__init__()
+        self.namelen = 0
+        self.name = name
 
     def dumps(self):
-        self.data = struct.pack("<h", self.version)
+        name = self.name.encode("utf8")
+        self.namelen = len(name)
+        self.data = b""
+        self.data += self.version.to_bytes(2, "little")
+        self.data += self.namelen.to_bytes(2, "little")  # 数万字のフォント名など無かろう
+        self.data += name
         return super().dumps()
 
 
@@ -124,6 +131,20 @@ class GlyphShape(Chunk):
         return super().dumps()
 
 
+class GlyphMetaData(Chunk):
+    chunk_id = b"GLMT"
+
+    def __init__(self, max_width=-1, height=-1):
+        super().__init__()
+        self.max_width = max_width
+        self.height = height
+
+    def dumps(self):
+        self.data += self.max_width.to_bytes(2, "little", signed=False)
+        self.data += self.height.to_bytes(2, "little", signed=False)
+        return super().dumps()
+
+
 class ShapeList(List):
     list_type = b"SPLI"
 
@@ -137,8 +158,10 @@ class Glyph(List):
     def __init__(self):
         super().__init__()
         self.shapes = ShapeList()
+        self.metadata = GlyphMetaData()
 
     def dumps(self):
+        self.children.append(self.metadata)
         self.children.append(self.shapes)
         return super().dumps()
 

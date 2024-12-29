@@ -64,6 +64,8 @@ def load_ttf(path, out, out_xml, out_pbm):
 
     glyphs: list[Glyph] = []
 
+    heights: list[int] = []
+
     for strike in loc.strikes:
         bmsizetab = strike.bitmapSizeTable
         logger.debug(bmsizetab.__dict__.keys())
@@ -77,6 +79,7 @@ def load_ttf(path, out, out_xml, out_pbm):
             except AttributeError:
                 continue
             w, h = met.width, met.height
+            heights.append(h)
             logger.info("%dx%d", h, w)
             for i in range(first, last + 1):
                 name, strikedat = strikedats[i]
@@ -118,6 +121,10 @@ def load_ttf(path, out, out_xml, out_pbm):
                             print(f"{col:016b}", file=outfile)
     glyphs.sort(key=lambda item: item.width)
 
+    if any(heights[i] != heights[i + 1] for i in range(len(heights) - 1)):
+        logger.fatal("font is not fixed height!")
+        return
+
     cmap = font["cmap"]
     rev = cmap.buildReversed()
 
@@ -154,6 +161,10 @@ def load_ttf(path, out, out_xml, out_pbm):
         result.glyph.shapes.children.append(
             FHFT.GlyphShape(gs[0].gid, gs[-1].gid, w, b"".join(item.data for item in gs))
         )
+    result.glyph.metadata.max_width = max(glyph.width for glyph in glyphs)
+    result.glyph.metadata.height = 16
+    name_table = font["name"]
+    result.metadata.name = name_table.getBestFullName()
     return result
 
 
