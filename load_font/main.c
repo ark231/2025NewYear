@@ -42,6 +42,7 @@ int main(int argc, const char** argv) {
     const char** positionals = malloc(sizeof(char*) * (argc - 1));  // It's 2024. I am very rich!
     size_t positional_count = 0;
     size_t positional_required = 2;
+    const char* outfname = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] == '-' && argv[i][1] == '-') {  // long
@@ -50,13 +51,21 @@ int main(int argc, const char** argv) {
                     SIMPLE_LOG(FATAL, "log-level requires one argument but none was given");
                     return 1;
                 }
-                set_log_level(parse_log_level(argv[++i]));
+                set_log_level(parse_log_level(argv[i + 1]));
+                ++i;
             } else if (strcmp(argv[i] + 2, "help") == 0) {
                 print_help();
                 return 0;
             } else if (strcmp(argv[i] + 2, "riff-view") == 0) {
                 mode = RIFF_VIEW_MODE;
                 positional_required = 1;  // source
+            } else if (strcmp(argv[i] + 2, "output") == 0) {
+                if (i == argc - 1) {
+                    SIMPLE_LOG(FATAL, "output requires one argument but none was given");
+                    return 1;
+                }
+                outfname = argv[i + 1];
+                ++i;
             } else {
                 SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
                 return -1;
@@ -65,6 +74,13 @@ int main(int argc, const char** argv) {
             if (argv[i][1] == 'h') {
                 print_help();
                 return 0;
+            } else if (argv[i][1] == 'o') {
+                if (i == argc - 1) {
+                    SIMPLE_LOG(FATAL, "output requires one argument but none was given");
+                    return 1;
+                }
+                outfname = argv[i + 1];
+                ++i;
             } else {
                 SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
                 return -1;
@@ -80,11 +96,21 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
+    if (outfname == NULL) {
+        SIMPLE_LOG(FATAL, "required argument 'output' is missing");
+        return 1;
+    }
+
     FILE* file = fopen(positionals[0], "rb");
+    if (file == NULL) {
+        SIMPLE_LOG(FATAL, "failed to open font file");
+        exit_status = 1;
+        goto quit;
+    }
 
     RIFFHeaderInfo header = riff_open(file);
     if (header.form_id == FOURCC("NULL")) {
-        SIMPLE_LOG(FATAL, "failed to open riff file");
+        SIMPLE_LOG(FATAL, "failed to parse riff header");
         exit_status = 1;
         goto quit;
     }
@@ -207,21 +233,22 @@ int main(int argc, const char** argv) {
         cursor++;
     }
 
-    printf("P1\n%d %zu\n", 16, bitmap_len);
-
-    for (size_t i = 0; i < bitmap_len; i++) {
-        for (int j = 15; j > -1; j--) {
-            printf(((bitmap[i] & (1 << j)) == 0) ? "0" : "1");
-        }
-        printf("\n");
+    FILE* outfile = fopen(outfname, "wb");
+    if (outfile == NULL) {
+        SIMPLE_LOG(FATAL, "failed to open output file");
+        exit_status = 1;
+        goto quit;
     }
-
-    list_seek_head(&chunklist);
+    for (size_t i = 0; i < bitmap_len; i++) {
+        fprintf(outfile, "0x%X,", bitmap[i]);
+    }
 
 quit:
     fclose(file);
+    fclose(outfile);
     free(positionals);
     free_list(chunklist);
+    free_list(glyphlist);
     return exit_status;
 }
 
