@@ -12,19 +12,21 @@ struct PlainChunkList {
 
 typedef struct PlainChunkList PlainChunkList;
 
-void init_list(PlainChunkList* list);
+bool list_is_head_sentinel(PlainChunkList* list);
+bool list_is_tail_sentinel(PlainChunkList* list);
+bool list_is_sentinel(PlainChunkList* list);
 
-[[nodiscard("this function takes VALUE of pointer, so this can't change the address the pointer points to.")]]
-PlainChunkList* list_seek_head(PlainChunkList* list);
+// initialize sentinel
+PlainChunkList* new_list(void);
 
-[[nodiscard("this function takes VALUE of pointer, so this can't change the address the pointer points to.")]]
-PlainChunkList* list_seek_tail(PlainChunkList* list);
+void list_seek_head(PlainChunkList** list);
 
-// there are no way but manual one to assign info to the very first item of the list
-// but it shouldn't cause any harm, right? I'm a bit lazy and deadline is close.
+void list_seek_tail(PlainChunkList** list);
+
+// the first and last item is sentinel
 void list_append(PlainChunkList* list, const RIFFPlainChunkInfo* info);
 
-RIFFPlainChunkInfo search_list(PlainChunkList* list, FourCC target_id);
+RIFFPlainChunkInfo* search_list(PlainChunkList* list, FourCC target_id);
 
 void free_list(PlainChunkList* list);
 #endif

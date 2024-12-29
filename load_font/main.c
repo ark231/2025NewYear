@@ -1,3 +1,4 @@
+#include <iso646.h>
 #include <riff_reader.h>
 #include <simple_logging.h>
 #include <stdint.h>
@@ -32,6 +33,8 @@ char32_t cstr_to_codepoint_utf8(const char* cstr, size_t* n_used_cstr);
 char32_t cstr_to_codepoint_native(const char* cstr, size_t* n_used_cstr);
 
 uint32_t search_char(FILE* file, PlainChunkList* chunklist, char32_t ch);
+
+size_t search_glyph(FILE* file, PlainChunkList* glyphlist, uint16_t gid, uint16_t* bitmap_buf);
 
 int main(int argc, const char** argv) {
     int exit_status = 0;
@@ -91,8 +94,7 @@ int main(int argc, const char** argv) {
     }
 
     uint32_t parsed_len = 4;  // format name
-    PlainChunkList* chunklist = malloc(sizeof(PlainChunkList));
-    init_list(chunklist);
+    PlainChunkList* chunklist = new_list();
     while (parsed_len < header.size) {
         RIFFChunkInfo info = riff_read_chunk_info(file);
         if (info.type == ERROR_CHUNK) {
@@ -122,15 +124,17 @@ int main(int argc, const char** argv) {
     if (mode == RIFF_VIEW_MODE) {
         goto quit;
     }
-    RIFFPlainChunkInfo meta = search_list(chunklist, FOURCC("FTMT"));
-    if (meta.chunk_id == FOURCC("NULL")) {
-        SIMPLE_LOG(ERROR, "chunk FTMT was not found");
+    RIFFPlainChunkInfo* meta = search_list(chunklist, FOURCC("FTMT"));
+    if (meta == NULL) {
+        SIMPLE_LOG(FATAL, "FTMT chunk was not found");
         exit_status = 1;
         goto quit;
     }
-#define MIN_VER 1
+#define MIN_VER 2
     uint16_t version;
-    riff_rewind_chunk(file, &meta);
+    uint16_t namelen;
+    char* name;
+    riff_rewind_chunk(file, meta);
     fread(&version, sizeof(version), 1, file);
     SIMPLE_LOG(INFO, "format version: %d", version);
     if (version < MIN_VER) {
@@ -138,6 +142,11 @@ int main(int argc, const char** argv) {
         exit_status = 1;
         goto quit;
     }
+    fread(&namelen, sizeof(namelen), 1, file);
+    name = malloc(sizeof(char) * (namelen + 1));
+    fread(name, sizeof(char), namelen, file);
+    name[namelen + 1 - 1] = '\0';  // last index is length-1
+    SIMPLE_LOG(INFO, "font name: %s", name);
 
     const char* target_str = positionals[1];
     size_t maxlen = strlen(target_str) + 1;  // WARN: assuming c string with utf8
@@ -147,13 +156,43 @@ int main(int argc, const char** argv) {
     char32_t* cursor = utf32_chars;
     size_t parsed_strlen = 0;
     size_t diff = -1;
+    size_t utf32_strlen = 0;
     while (parsed_strlen < maxlen && diff != 0) {  // diff is 0 when it reaches NUL char
         *cursor = cstr_to_codepoint_native(target_str, &diff);
         target_str += diff;
         parsed_strlen += diff;
         cursor++;
+        utf32_strlen++;
     }
     cursor = utf32_chars;
+
+    uint16_t max_width;
+    uint16_t height;
+    RIFFPlainChunkInfo* glyph_meta = search_list(chunklist, FOURCC("GLMT"));
+    if (glyph_meta == NULL) {
+        SIMPLE_LOG(FATAL, "GLMT chunk was not found");
+        exit_status = 1;
+        goto quit;
+    }
+    riff_rewind_chunk(file, glyph_meta);
+    fread(&max_width, sizeof(max_width), 1, file);
+    fread(&height, sizeof(height), 1, file);
+    if (height != 16) {
+        SIMPLE_LOG(FATAL, "unsupported glyph height %d", height);
+    }
+    size_t bitmap_maxlen = max_width * utf32_strlen;  // absolute maximum
+    uint16_t* bitmap = malloc(sizeof(uint16_t) * bitmap_maxlen);
+    size_t bitmap_len = 0;
+
+    PlainChunkList* glyphlist = new_list();
+    list_seek_head(&chunklist);
+    while (chunklist->next != NULL) {
+        if ((not list_is_sentinel(chunklist)) && chunklist->info.chunk_id == FOURCC("GLSP")) {
+            list_append(glyphlist, &chunklist->info);
+        }
+        chunklist = chunklist->next;
+    }
+
     while (*cursor != '\0') {
         uint32_t gid = search_char(file, chunklist, *cursor);
         if (gid == -1) {
@@ -161,9 +200,23 @@ int main(int argc, const char** argv) {
             cursor++;
             continue;
         }
-        printf("ch: 0x%08X gid: 0x%04X\n", *cursor, gid);
+        SIMPLE_LOG(INFO, "ch: 0x%06X gid: 0x%04X", *cursor, gid);
+        size_t diff = 0;
+        diff = search_glyph(file, glyphlist, gid, bitmap + bitmap_len);
+        bitmap_len += diff;
         cursor++;
     }
+
+    printf("P1\n%d %zu\n", 16, bitmap_len);
+
+    for (size_t i = 0; i < bitmap_len; i++) {
+        for (int j = 15; j > -1; j--) {
+            printf(((bitmap[i] & (1 << j)) == 0) ? "0" : "1");
+        }
+        printf("\n");
+    }
+
+    list_seek_head(&chunklist);
 
 quit:
     fclose(file);
@@ -305,16 +358,38 @@ uint32_t search_char(FILE* file, PlainChunkList* chunklist, char32_t ch) {
         charsize = 4;
     }
     itemsize = charsize + 2;
-    RIFFPlainChunkInfo cmap = search_list(chunklist, cmap_id);
-    if (cmap.chunk_id == FOURCC("NULL")) {
-        SIMPLE_LOG(ERROR, "chunk %s not found", cfourcc(cmap_id));
+    RIFFPlainChunkInfo* cmap = search_list(chunklist, cmap_id);
+    if (cmap == NULL) {
+        SIMPLE_LOG(ERROR, "%s chunk not found", cfourcc(cmap_id));
         return -1;
     }
-    size_t itemcount = cmap.size / itemsize;
-    if (cmap.size % itemsize != 0) {
-        SIMPLE_LOG(ERROR, "the size of cmap %s (%lu) is not multiple of itemsize (%lu)", cfourcc(cmap.chunk_id),
-                   cmap.size, itemsize);
+    size_t itemcount = cmap->size / itemsize;
+    if (cmap->size % itemsize != 0) {
+        SIMPLE_LOG(ERROR, "the size of cmap %s (%lu) is not multiple of itemsize (%lu)", cfourcc(cmap->chunk_id),
+                   cmap->size, itemsize);
     }
-    SIMPLE_LOG(DEBUG, "cmap: %s itemcount: %d", cfourcc(cmap.chunk_id), itemcount);
-    return bin_search_char(file, &cmap, ch, itemsize, charsize, 0, itemcount - 1);
+    SIMPLE_LOG(DEBUG, "cmap: %s itemcount: %d", cfourcc(cmap->chunk_id), itemcount);
+    return bin_search_char(file, cmap, ch, itemsize, charsize, 0, itemcount - 1);
+}
+size_t search_glyph(FILE* file, PlainChunkList* glyphlist, uint16_t gid, uint16_t* bitmap_buf) {
+    list_seek_head(&glyphlist);
+    while (glyphlist->next != NULL) {
+        if ((not list_is_sentinel(glyphlist))) {
+            uint16_t first_gid;
+            uint16_t last_gid;
+            riff_rewind_chunk(file, &glyphlist->info);
+            fread(&first_gid, sizeof(first_gid), 1, file);
+            fread(&last_gid, sizeof(last_gid), 1, file);
+            if (first_gid <= gid && gid <= last_gid) {
+                uint16_t width;
+                fread(&width, sizeof(width), 1, file);
+                riff_seek_in_chunk(file, &glyphlist->info,
+                                   sizeof(uint16_t) * 3 + (sizeof(uint16_t) * width * (gid - first_gid)));
+                fread(bitmap_buf, sizeof(uint16_t), width, file);
+                return width;
+            }
+        }
+        glyphlist = glyphlist->next;
+    }
+    return 0;
 }
