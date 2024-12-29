@@ -58,5 +58,6 @@ void riff_rewind_all(FILE* file, const RIFFHeaderInfo* info);
 RIFFChunkInfo riff_read_chunk_info(FILE* file);
 void riff_skip_chunk(FILE* file, const RIFFPlainChunkInfo* info);
 void riff_rewind_chunk(FILE* file, const RIFFPlainChunkInfo* info);
+void riff_seek_in_chunk(FILE* file, const RIFFPlainChunkInfo* info, long offset);  // SEEK_SET only
 
 #endif

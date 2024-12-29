@@ -66,3 +66,6 @@ void riff_skip_chunk(FILE* file, const RIFFPlainChunkInfo* info) {
     fseek(file, info->pos + 4 + 4 + info->size, SEEK_SET);
 }
 void riff_rewind_chunk(FILE* file, const RIFFPlainChunkInfo* info) { fseek(file, info->pos + 4 + 4, SEEK_SET); }
+void riff_seek_in_chunk(FILE* file, const RIFFPlainChunkInfo* info, long offset) {
+    fseek(file, info->pos + 8 + offset, SEEK_SET);
+}

@@ -65,8 +65,9 @@ class CMAPItem:
     glyphid: int
 
     def to_bytes(self):
+        # e.g. chars with 9~15 bit will be 3 digits long in hex, resulting odd number of bytes. so ceil it
         size = math.ceil((len(hex(self.codepoint)) - 2) / 2)
-        assert size <= 4
+        assert 0 < size <= 4
         result = b""
         result += self.codepoint.to_bytes(size, "little", signed=False)
         result += self.glyphid.to_bytes(2, "little", signed=False)

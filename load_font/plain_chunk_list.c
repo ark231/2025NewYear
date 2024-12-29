@@ -33,6 +33,7 @@ void list_append(PlainChunkList* list, const RIFFPlainChunkInfo* info) {
     list->next->prev = list;
     list = list->next;
     list->info = *info;
+    list->next = NULL;
 }
 void free_list(PlainChunkList* list) {
     list = list_seek_tail(list);
