@@ -100,7 +100,7 @@ int main(int argc, const char** argv) {
             exit_status = 1;
             goto quit;
         }
-        parsed_len += PLAININFO(info).size + 8;
+        parsed_len += PLAININFO(info).totalsize;
         if (mode == RIFF_VIEW_MODE) {
             printf("- %s size: %u offset: %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
                    PLAININFO(info).pos);
@@ -181,7 +181,7 @@ void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chu
             SIMPLE_LOG(FATAL, "failed to parse chunk header");
             return;
         }
-        parsed_len += PLAININFO(info).size + 8;
+        parsed_len += PLAININFO(info).totalsize;
         if (mode == RIFF_VIEW_MODE) {
             for (int i = 0; i < indent; i++) {
                 printf(INDENT);

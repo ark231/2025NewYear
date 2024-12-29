@@ -36,6 +36,8 @@ RIFFHeaderInfo riff_open(FILE* file) {
         return result;
     }
     fread(&result.size, sizeof(result.size), 1, file);
+    int padding = result.size % 2 == 0 ? 0 : 1;
+    result.totalsize = result.size + 8 + padding;
     SIMPLE_LOG(DEBUG, "RIFF");
     SIMPLE_LOG(DEBUG, "size: %d", result.size);
     fread(&result.form_id, sizeof(FourCC), 1, file);
@@ -44,13 +46,15 @@ RIFFHeaderInfo riff_open(FILE* file) {
     SIMPLE_LOG(DEBUG, "form: %s", typebuf);
     return result;
 }
-void riff_skip_all(FILE* file, const RIFFHeaderInfo* info) { fseek(file, info->pos + 4 + 4 + info->size, SEEK_SET); }
+void riff_skip_all(FILE* file, const RIFFHeaderInfo* info) { fseek(file, info->pos + info->totalsize, SEEK_SET); }
 void riff_rewind_all(FILE* file, const RIFFHeaderInfo* info) { fseek(file, info->pos + 4 + 4, SEEK_SET); }
 RIFFChunkInfo riff_read_chunk_info(FILE* file) {
     RIFFChunkInfo result = {.type = ERROR_CHUNK};
     RIFFPlainChunkInfo info = {FOURCC("NULL"), 0, ftell(file)};
     fread(&info.chunk_id, sizeof(info.chunk_id), 1, file);
     fread(&info.size, sizeof(info.size), 1, file);
+    int padding = info.size % 2 == 0 ? 0 : 1;
+    info.totalsize = info.size + 8 + padding;
     SIMPLE_LOG(DEBUG, "info.chunk_id: %s", cfourcc(info.chunk_id));
     if (info.chunk_id == FOURCC("LIST")) {
         result.type = LIST;
@@ -62,9 +66,7 @@ RIFFChunkInfo riff_read_chunk_info(FILE* file) {
     }
     return result;
 }
-void riff_skip_chunk(FILE* file, const RIFFPlainChunkInfo* info) {
-    fseek(file, info->pos + 4 + 4 + info->size, SEEK_SET);
-}
+void riff_skip_chunk(FILE* file, const RIFFPlainChunkInfo* info) { fseek(file, info->pos + info->totalsize, SEEK_SET); }
 void riff_rewind_chunk(FILE* file, const RIFFPlainChunkInfo* info) { fseek(file, info->pos + 4 + 4, SEEK_SET); }
 void riff_seek_in_chunk(FILE* file, const RIFFPlainChunkInfo* info, long offset) {
     fseek(file, info->pos + 8 + offset, SEEK_SET);

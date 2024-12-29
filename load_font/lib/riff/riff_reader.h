@@ -11,15 +11,17 @@ size_t stringize_fourcc(FourCC fourcc, char* dst, size_t len);
 const char* cfourcc(FourCC fourcc);
 
 typedef struct {
-    FourCC form_id;
-    uint32_t size;
-    long pos;
+    FourCC form_id;      // RIFF format id
+    uint32_t size;       // RIFF file size
+    long pos;            // position of the starting of the RIFF header including RIFF FourCC, size,
+    uint32_t totalsize;  // total length of file including RIFF FourCC, size, padding
 } RIFFHeaderInfo;
 
 typedef struct {
-    FourCC chunk_id;
-    uint32_t size;
-    long pos;
+    FourCC chunk_id;     // RIFF chunk id
+    uint32_t size;       // RIFF data size
+    long pos;            // posision of the starting of the chunk including id, size
+    uint32_t totalsize;  // total length of chunk including id,size,padding
 } RIFFPlainChunkInfo;
 
 typedef struct {
