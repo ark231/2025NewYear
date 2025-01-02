@@ -1,10 +1,12 @@
 #include <iso646.h>
 #include <riff_reader.h>
 #include <simple_logging.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <uchar.h>
 
 #include "plain_chunk_list.h"
@@ -14,12 +16,15 @@ void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chu
 
 void print_help() {
     printf("load_font: load FixedHeightFont file and extract bitmap for specified characters\n");
-    printf("usase: load_font [options] file chars\n");
+    printf("usase: load_font [options] file \n");
     printf("options: \n");
-    printf("--log-level <arg> set log level to <arg>\n");
-    printf("                  log levels: DEBUG, INFO, WARNING, ERROR, FATAL\n");
-    printf("--riff-view       show riff information only and don't extract font\n");
-    printf("-h/--help         show this help\n");
+    printf("--log-level <level>  set log level to <level>\n");
+    printf("                     <level> can be: DEBUG, INFO, WARNING, ERROR, FATAL\n");
+    printf("--riff-view          show riff information only and don't extract font\n");
+    printf("-o/--output <file>   output file path. required\n");
+    printf("-c/--chars  <str>    string of characters to be converted into bitmap\n");
+    printf("-C/--charfile <file> path to a file containing string to be converted\n");
+    printf("-h/--help            show this help\n");
 }
 
 typedef enum {
@@ -36,55 +41,87 @@ uint32_t search_char(FILE* file, PlainChunkList* chunklist, char32_t ch);
 
 size_t search_glyph(FILE* file, PlainChunkList* glyphlist, uint16_t gid, uint16_t* bitmap_buf);
 
+bool is_option(const char* arg) {
+    size_t len = strlen(arg);
+    if (len < 2 || arg[0] != '-') {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+bool match_arg(const char* arg, char short_name, const char* long_name) {
+    if (not is_option(arg)) {
+        return false;
+    }
+    if (arg[1] == '-') {
+        return strcmp(arg + 2, long_name) == 0;
+    } else if (short_name != '\0') {
+        return arg[1] == short_name;
+    } else {
+        return false;
+    }
+}
+
 int main(int argc, const char** argv) {
     int exit_status = 0;
 
     const char** positionals = malloc(sizeof(char*) * (argc - 1));  // It's 2024. I am very rich!
     size_t positional_count = 0;
-    size_t positional_required = 2;
+    size_t positional_required = 1;
     const char* outfname = NULL;
+    char* source_str = NULL;
 
     for (int i = 1; i < argc; i++) {
-        if (argv[i][0] == '-' && argv[i][1] == '-') {  // long
-            if (strcmp(argv[i] + 2, "log-level") == 0) {
-                if (i == argc - 1) {
-                    SIMPLE_LOG(FATAL, "log-level requires one argument but none was given");
-                    return 1;
-                }
-                set_log_level(parse_log_level(argv[i + 1]));
-                ++i;
-            } else if (strcmp(argv[i] + 2, "help") == 0) {
-                print_help();
-                return 0;
-            } else if (strcmp(argv[i] + 2, "riff-view") == 0) {
-                mode = RIFF_VIEW_MODE;
-                positional_required = 1;  // source
-            } else if (strcmp(argv[i] + 2, "output") == 0) {
-                if (i == argc - 1) {
-                    SIMPLE_LOG(FATAL, "output requires one argument but none was given");
-                    return 1;
-                }
-                outfname = argv[i + 1];
-                ++i;
-            } else {
-                SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
-                return -1;
+        if (match_arg(argv[i], '\0', "log-level")) {
+            if (i == argc - 1) {
+                SIMPLE_LOG(FATAL, "log-level requires one argument but none was given");
+                return 1;
             }
-        } else if (argv[i][0] == '-') {
-            if (argv[i][1] == 'h') {
-                print_help();
-                return 0;
-            } else if (argv[i][1] == 'o') {
-                if (i == argc - 1) {
-                    SIMPLE_LOG(FATAL, "output requires one argument but none was given");
-                    return 1;
-                }
-                outfname = argv[i + 1];
-                ++i;
-            } else {
-                SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
-                return -1;
+            set_log_level(parse_log_level(argv[i + 1]));
+            ++i;
+        } else if (match_arg(argv[i], 'h', "help")) {
+            print_help();
+            return 0;
+        } else if (match_arg(argv[i], '\0', "riff-view")) {
+            mode = RIFF_VIEW_MODE;
+            positional_required = 1;  // source
+        } else if (match_arg(argv[i], 'o', "output")) {
+            if (i == argc - 1) {
+                SIMPLE_LOG(FATAL, "output requires one argument but none was given");
+                return 1;
             }
+            outfname = argv[i + 1];
+            ++i;
+        } else if (match_arg(argv[i], 'c', "chars")) {
+            if (i == argc - 1) {
+                SIMPLE_LOG(FATAL, "chars requires one argument but none was given");
+                return 1;
+            }
+            size_t len = strlen(argv[i + 1]) + 1;
+            source_str = malloc(len);
+            strncpy(source_str, argv[i + 1], len - 1);
+            source_str[len - 1] = '\0';
+            ++i;
+        } else if (match_arg(argv[i], 'C', "charfile")) {
+            if (i == argc - 1) {
+                SIMPLE_LOG(FATAL, "charfile requires one argument but none was given");
+                return 1;
+            }
+            const char* fname = argv[i + 1];
+            struct stat charf_stat;
+            stat(fname, &charf_stat);
+            FILE* charfile = fopen(fname, "r");
+            size_t len = charf_stat.st_size + 1;
+            source_str = malloc(len);
+            source_str[len - 1] = '\0';
+            fread(source_str, sizeof(char), len, charfile);
+            fclose(charfile);
+
+            ++i;
+        } else if (is_option(argv[i])) {
+            SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
+            return -1;
         } else {
             positionals[positional_count] = argv[i];
             positional_count++;
@@ -98,6 +135,10 @@ int main(int argc, const char** argv) {
 
     if (outfname == NULL) {
         SIMPLE_LOG(FATAL, "required argument 'output' is missing");
+        return 1;
+    }
+    if (source_str == NULL) {
+        SIMPLE_LOG(FATAL, "required argument 'char' or 'charfile' is missing");
         return 1;
     }
 
@@ -174,7 +215,7 @@ int main(int argc, const char** argv) {
     name[namelen + 1 - 1] = '\0';  // last index is length-1
     SIMPLE_LOG(INFO, "font name: %s", name);
 
-    const char* target_str = positionals[1];
+    const char* target_str = source_str;
     size_t maxlen = strlen(target_str) + 1;  // WARN: assuming c string with utf8
     size_t buflen = sizeof(char32_t) * maxlen;
     char32_t* utf32_chars = malloc(buflen);
@@ -191,6 +232,9 @@ int main(int argc, const char** argv) {
         utf32_strlen++;
     }
     cursor = utf32_chars;
+
+    free(source_str);
+    target_str = source_str = NULL;
 
     uint16_t max_width;
     uint16_t height;
@@ -209,6 +253,10 @@ int main(int argc, const char** argv) {
     size_t bitmap_maxlen = max_width * utf32_strlen;  // absolute maximum
     uint16_t* bitmap = malloc(sizeof(uint16_t) * bitmap_maxlen);
     size_t bitmap_len = 0;
+    size_t maxlinecount = utf32_strlen;
+    size_t* linewidths = malloc(sizeof(size_t) * maxlinecount);
+    size_t linecount = 0;
+    size_t previous_bitmap_len = 0;
 
     PlainChunkList* glyphlist = new_list();
     list_seek_head(&chunklist);
@@ -220,6 +268,13 @@ int main(int argc, const char** argv) {
     }
 
     while (*cursor != '\0') {
+        if (*cursor == '\n') {
+            linewidths[linecount] = bitmap_len - previous_bitmap_len;
+            previous_bitmap_len = bitmap_len;
+            linecount++;
+            cursor++;
+            continue;
+        }
         uint32_t gid = search_char(file, chunklist, *cursor);
         if (gid == -1) {
             SIMPLE_LOG(ERROR, "character 0x%04x wasn't found", *cursor);
@@ -232,6 +287,10 @@ int main(int argc, const char** argv) {
         bitmap_len += diff;
         cursor++;
     }
+    if (linecount == 0) {
+        linecount = 1;
+        linewidths[0] = bitmap_len;
+    }
 
     FILE* outfile = fopen(outfname, "wb");
     if (outfile == NULL) {
@@ -239,9 +298,16 @@ int main(int argc, const char** argv) {
         exit_status = 1;
         goto quit;
     }
+    fprintf(outfile, "uint8_t bitmap[] = {\n");
     for (size_t i = 0; i < bitmap_len; i++) {
-        fprintf(outfile, "0x%X,", bitmap[i]);
+        fprintf(outfile, "0x%X, ", bitmap[i]);
     }
+    fprintf(outfile, "};\n");
+    fprintf(outfile, "size_t line_widths[] = {\n");
+    for (size_t i = 0; i < linecount; i++) {
+        fprintf(outfile, "%zu, ", linewidths[i]);
+    }
+    fprintf(outfile, "};\n");
 
 quit:
     fclose(file);
