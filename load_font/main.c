@@ -355,11 +355,14 @@ uint32_t bin_search_char(FILE* file, const RIFFPlainChunkInfo* cmap, char32_t ch
     char32_t pivot_ch = 0;
     riff_seek_in_chunk(file, cmap, itemsize * pivot);
     fread(&pivot_ch, charsize, 1, file);
-    SIMPLE_LOG(DEBUG, "pivot: %u chsize: %u ch: %04x pivot_ch: %04x", pivot, charsize, ch, pivot_ch);
+    SIMPLE_LOG(DEBUG, "pivot: %u chsize: %u ch: %04x pivot_ch: %04x, range_min: %ld, range_max: %ld", pivot, charsize,
+               ch, pivot_ch, range_min, range_max);
     if (pivot_ch == ch) {
         uint16_t pivot_gid;
         fread(&pivot_gid, sizeof(uint16_t), 1, file);
         return pivot_gid;
+    } else if (range_min == range_max) {
+        return -1;
     } else if (pivot_ch < ch) {
         return bin_search_char(file, cmap, ch, itemsize, charsize, pivot, range_max);
     } else {
