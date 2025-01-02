@@ -298,7 +298,7 @@ int main(int argc, const char** argv) {
         exit_status = 1;
         goto quit;
     }
-    fprintf(outfile, "uint8_t bitmap[] = {\n");
+    fprintf(outfile, "uint16_t bitmap[] = {\n");
     for (size_t i = 0; i < bitmap_len; i++) {
         fprintf(outfile, "0x%X, ", bitmap[i]);
     }
