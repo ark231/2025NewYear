@@ -250,11 +250,12 @@ int main(int argc, const char** argv) {
     if (height != 16) {
         SIMPLE_LOG(FATAL, "unsupported glyph height %d", height);
     }
-    size_t bitmap_maxlen = max_width * utf32_strlen;  // absolute maximum
+    size_t bitmap_maxlen = (max_width + 2) * utf32_strlen;  // absolute maximum
     uint16_t* bitmap = malloc(sizeof(uint16_t) * bitmap_maxlen);
     size_t bitmap_len = 0;
     size_t maxlinecount = utf32_strlen;
     size_t* linewidths = malloc(sizeof(size_t) * maxlinecount);
+    size_t* lineends = malloc(sizeof(size_t) * maxlinecount);
     size_t linecount = 0;
     size_t previous_bitmap_len = 0;
 
@@ -271,6 +272,7 @@ int main(int argc, const char** argv) {
         if (*cursor == '\n') {
             linewidths[linecount] = bitmap_len - previous_bitmap_len;
             previous_bitmap_len = bitmap_len;
+            lineends[linecount] = bitmap_len;
             linecount++;
             cursor++;
             continue;
@@ -290,6 +292,7 @@ int main(int argc, const char** argv) {
     if (linecount == 0) {
         linecount = 1;
         linewidths[0] = bitmap_len;
+        lineends[0] = bitmap_len;
     }
 
     FILE* outfile = fopen(outfname, "wb");
@@ -298,16 +301,21 @@ int main(int argc, const char** argv) {
         exit_status = 1;
         goto quit;
     }
-    fprintf(outfile, "uint16_t bitmap[] = {\n");
+    fprintf(outfile, "uint16_t bitmap[] = {\n    ");
     for (size_t i = 0; i < bitmap_len; i++) {
         fprintf(outfile, "0x%X, ", bitmap[i]);
     }
-    fprintf(outfile, "};\n");
-    fprintf(outfile, "size_t line_widths[] = {\n");
+    fprintf(outfile, "\n};\n");
+    fprintf(outfile, "size_t line_widths[] = {\n    ");
     for (size_t i = 0; i < linecount; i++) {
         fprintf(outfile, "%zu, ", linewidths[i]);
     }
-    fprintf(outfile, "};\n");
+    fprintf(outfile, "\n};\n");
+    fprintf(outfile, "size_t line_ends[] = {\n    ");
+    for (size_t i = 0; i < linecount; i++) {
+        fprintf(outfile, "%zu, ", lineends[i]);
+    }
+    fprintf(outfile, "\n};\n");
 
 quit:
     fclose(file);
@@ -478,11 +486,22 @@ size_t search_glyph(FILE* file, PlainChunkList* glyphlist, uint16_t gid, uint16_
             fread(&last_gid, sizeof(last_gid), 1, file);
             if (first_gid <= gid && gid <= last_gid) {
                 uint16_t width;
+                uint16_t result;
                 fread(&width, sizeof(width), 1, file);
                 riff_seek_in_chunk(file, &glyphlist->info,
                                    sizeof(uint16_t) * 3 + (sizeof(uint16_t) * width * (gid - first_gid)));
                 fread(bitmap_buf, sizeof(uint16_t), width, file);
-                return width;
+                result = width;
+                // insert space between character if it's not in font
+                if (bitmap_buf[0] != 0) {
+                    memmove(bitmap_buf + 1, bitmap_buf, width);  // since to area is overwrapping, memcpy cannot be used
+                    ++result;
+                }
+                if (bitmap_buf[result - 1] != 0) {
+                    bitmap_buf[result] = 0;
+                    ++result;
+                }
+                return result;
             }
         }
         glyphlist = glyphlist->next;
