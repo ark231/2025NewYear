@@ -42,9 +42,9 @@ void simple_log_impl(LogLevel level, const char *file, int line, const char *fun
         file++;
     }
 
-    printf("%s %s:%d %s [%s]: ", timebuf, fname, line, func, stringify_level(level));
-    vprintf(format, ap);
-    printf("\n");
+    fprintf(stderr, "%s %s:%d %s [%s]: ", timebuf, fname, line, func, stringify_level(level));
+    vfprintf(stderr, format, ap);
+    fprintf(stderr, "\n");
     va_end(ap);
 }
 #define PARSE_LOG_CASE(str, level)          \

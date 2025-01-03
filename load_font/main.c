@@ -24,6 +24,7 @@ void print_help() {
     printf("-o/--output <file>   output file path. required\n");
     printf("-c/--chars  <str>    string of characters to be converted into bitmap\n");
     printf("-C/--charfile <file> path to a file containing string to be converted\n");
+    printf("--pbm-output <file>  pbm output file path. optional\n");
     printf("-h/--help            show this help\n");
 }
 
@@ -71,6 +72,7 @@ int main(int argc, const char** argv) {
     size_t positional_required = 1;
     const char* outfname = NULL;
     char* source_str = NULL;
+    const char* pbmfname = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (match_arg(argv[i], '\0', "log-level")) {
@@ -119,6 +121,13 @@ int main(int argc, const char** argv) {
             fclose(charfile);
 
             ++i;
+        } else if (match_arg(argv[i], '\n', "pbm-output")) {
+            if (i == argc - 1) {
+                SIMPLE_LOG(FATAL, "pbm-output requires one argument but none was given");
+                return 1;
+            }
+            pbmfname = argv[i + 1];
+            ++i;
         } else if (is_option(argv[i])) {
             SIMPLE_LOG(FATAL, "unknown argument %s", argv[i]);
             return -1;
@@ -133,13 +142,15 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    if (outfname == NULL) {
-        SIMPLE_LOG(FATAL, "required argument 'output' is missing");
-        return 1;
-    }
-    if (source_str == NULL) {
-        SIMPLE_LOG(FATAL, "required argument 'char' or 'charfile' is missing");
-        return 1;
+    if (mode == LOAD_FONT_MODE) {
+        if (outfname == NULL) {
+            SIMPLE_LOG(FATAL, "required argument 'output' is missing");
+            return 1;
+        }
+        if (source_str == NULL) {
+            SIMPLE_LOG(FATAL, "required argument 'char' or 'charfile' is missing");
+            return 1;
+        }
     }
 
     FILE* file = fopen(positionals[0], "rb");
@@ -299,11 +310,38 @@ int main(int argc, const char** argv) {
     if (outfile == NULL) {
         SIMPLE_LOG(FATAL, "failed to open output file");
         exit_status = 1;
+        goto quit;  // NOTE: this results in fclose(NULL), which may be problematic
+    }
+    FILE* pbmfile = NULL;
+    if (pbmfname != NULL) {
+        SIMPLE_LOG(DEBUG, "pbmfname: %s\n", pbmfname);
+        if (strcmp(pbmfname, "-") == 0) {
+            pbmfile = stdout;
+        } else {
+            pbmfile = fopen(pbmfname, "wb");
+        }
+    }
+    if (pbmfile == NULL) {
+        SIMPLE_LOG(FATAL, "failed to open pbm output file");
+        exit_status = 1;
         goto quit;
     }
+    if (pbmfile != NULL) {
+        fprintf(pbmfile, "P4\n16 %zu\n", bitmap_len);
+    }
+
     fprintf(outfile, "uint16_t bitmap[] = {\n    ");
     for (size_t i = 0; i < bitmap_len; i++) {
         fprintf(outfile, "0x%X, ", bitmap[i]);
+        if (pbmfile != NULL) {
+            uint8_t upper = (bitmap[i] & 0xff00) >> 8;
+            uint8_t lower = bitmap[i] & 0xff;
+            fwrite(&upper, sizeof(uint8_t), 1, pbmfile);
+            fwrite(&lower, sizeof(uint8_t), 1, pbmfile);
+        }
+    }
+    if (pbmfile != NULL && pbmfile != stdout) {
+        fclose(pbmfile);
     }
     fprintf(outfile, "\n};\n");
     fprintf(outfile, "size_t line_widths[] = {\n    ");
@@ -488,13 +526,15 @@ size_t search_glyph(FILE* file, PlainChunkList* glyphlist, uint16_t gid, uint16_
                 uint16_t width;
                 uint16_t result;
                 fread(&width, sizeof(width), 1, file);
+                SIMPLE_LOG(DEBUG, "gid: 0x%x, width: %d", gid, width);
                 riff_seek_in_chunk(file, &glyphlist->info,
                                    sizeof(uint16_t) * 3 + (sizeof(uint16_t) * width * (gid - first_gid)));
                 fread(bitmap_buf, sizeof(uint16_t), width, file);
                 result = width;
                 // insert space between character if it's not in font
                 if (bitmap_buf[0] != 0) {
-                    memmove(bitmap_buf + 1, bitmap_buf, width);  // since to area is overwrapping, memcpy cannot be used
+                    memmove(bitmap_buf + 1, bitmap_buf,
+                            sizeof(uint16_t) * width);  // since to area is overwrapping, memcpy cannot be used
                     ++result;
                 }
                 if (bitmap_buf[result - 1] != 0) {
