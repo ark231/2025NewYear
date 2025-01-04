@@ -1,0 +1,3 @@
+[submodule "AnalyzeResult/progressbar"]
+	path = AnalyzeResult/progressbar
+	url = git@github.com:gipert/progressbar.git
