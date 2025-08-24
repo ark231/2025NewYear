@@ -356,11 +356,21 @@ int main(int argc, const char** argv) {
     fprintf(outfile, "\n};\n");
 
 quit:
-    fclose(file);
-    fclose(outfile);
-    free(positionals);
-    free_list(chunklist);
-    free_list(glyphlist);
+    if (file) {
+        fclose(file);
+    }
+    if (outfile) {
+        fclose(outfile);
+    }
+    if (positionals) {
+        free(positionals);
+    }
+    if (chunklist) {
+        free_list(chunklist);
+    }
+    if (glyphlist) {
+        free_list(glyphlist);
+    }
     return exit_status;
 }
 
