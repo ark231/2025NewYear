@@ -168,7 +168,7 @@ int main(int argc, const char** argv) {
     }
 
     if (mode == RIFF_VIEW_MODE) {
-        printf("RIFF size: %u form: %s\n", header.size, cfourcc(header.form_id));
+        printf("RIFF size: %u form: '%s'\n", header.size, cfourcc(header.form_id));
     }
 
     uint32_t parsed_len = 4;  // format name
@@ -182,12 +182,12 @@ int main(int argc, const char** argv) {
         }
         parsed_len += PLAININFO(info).totalsize;
         if (mode == RIFF_VIEW_MODE) {
-            printf("- %s size: %u offset: %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
+            printf("- '%s' size: %u offset: %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
                    PLAININFO(info).pos);
         }
         if (info.type == LIST) {
             if (mode == RIFF_VIEW_MODE) {
-                printf(" type: %s\n", cfourcc(info.info.list.list_type));
+                printf(" type: '%s'\n", cfourcc(info.info.list.list_type));
             }
             visit_riff_list(file, PLAININFO(info).size, 1, chunklist);
         } else {
@@ -388,13 +388,13 @@ void visit_riff_list(FILE* file, uint32_t total, int indent, PlainChunkList* chu
             for (int i = 0; i < indent; i++) {
                 printf(INDENT);
             }
-            printf("- %s size: %u offset: %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
+            printf("- '%s' size: %u offset: %ld", cfourcc(PLAININFO(info).chunk_id), PLAININFO(info).size,
                    PLAININFO(info).pos);
         }
 
         if (info.type == LIST) {
             if (mode == RIFF_VIEW_MODE) {
-                printf(" type: %s\n", cfourcc(info.info.list.list_type));
+                printf(" type: '%s'\n", cfourcc(info.info.list.list_type));
             }
             visit_riff_list(file, PLAININFO(info).size, indent + 1, chunklist);
         } else {
